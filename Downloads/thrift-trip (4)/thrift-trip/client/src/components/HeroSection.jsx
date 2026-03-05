@@ -15,7 +15,7 @@ export default function HeroSection() {
         </p>
         <div className="hero__stats">
           <div className="hero__stat">
-            <span className="hero__stat-number">9,000+</span>
+            <span className="hero__stat-number">2,000+</span>
             <span className="hero__stat-label">Airports worldwide</span>
           </div>
           <div className="hero__stat">
