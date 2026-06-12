@@ -16,15 +16,15 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
 const pageTitles: Record<string, string> = {
-  '/dashboard':           'Dashboard',
-  '/dashboard/goals':     'Goal Management',
-  '/dashboard/reports':   'Reports',
-  '/dashboard/schedule':  'Schedule & Events',
-  '/dashboard/branches':  'Branch Overview',
-  '/dashboard/analytics': 'Analytics',
-  '/dashboard/settings':  'Settings',
-  '/dashboard/profile':   'My Profile',
-  '/dashboard/users':     'User Management',
+  '/dashboard':                  'Dashboard',
+  '/dashboard/goals':            'Goal Management',
+  '/dashboard/reports':          'Reports',
+  '/dashboard/schedule':         'Schedule & Events',
+  '/dashboard/branches':         'Branch Overview',
+  '/dashboard/analytics':        'Analytics',
+  '/dashboard/settings':         'Settings',
+  '/dashboard/profile':          'My Profile',
+  '/dashboard/users':            'User Management',
 }
 
 interface HeaderProps {
@@ -38,9 +38,14 @@ export function Header({ profile, settings, onMenuClick }: HeaderProps) {
   const router = useRouter()
   const supabase = createClient()
 
-  const title = Object.entries(pageTitles).find(([key]) =>
-    key === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(key)
-  )?.[1] ?? 'Dashboard'
+  // Handle dynamic branch detail route specially
+  const isBranchDetail = /^\/dashboard\/branches\/[^/]+$/.test(pathname)
+
+  const title = isBranchDetail
+    ? 'Branch Detail'
+    : Object.entries(pageTitles).find(([key]) =>
+        key === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(key)
+      )?.[1] ?? 'Dashboard'
 
   async function handleSignOut() {
     await supabase.auth.signOut()

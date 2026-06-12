@@ -36,6 +36,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<Profile[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [currentUser, setCurrentUser] = useState<Profile | null>(null)
+  const [emailMap, setEmailMap] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('all')
@@ -82,6 +83,14 @@ export default function UsersPage() {
     setBranches(b ?? [])
     setCurrentUser(me)
     setLoading(false)
+
+    // Load emails in the background (super_admin only)
+    if (me?.role === 'super_admin') {
+      fetch('/api/admin/users')
+        .then(r => r.json())
+        .then(d => { if (d.emails) setEmailMap(d.emails) })
+        .catch(() => {/* silent fail — emails just won't show */})
+    }
   }
 
   const isAdmin = currentUser?.role === 'super_admin'
@@ -282,7 +291,12 @@ export default function UsersPage() {
                         </Avatar>
                         <div>
                           <p className="font-medium text-slate-900 text-sm">{user.full_name || 'Unnamed'}</p>
-                          {user.phone && <p className="text-xs text-slate-400">{user.phone}</p>}
+                          {emailMap[user.id] && (
+                            <p className="text-xs text-slate-400 truncate max-w-[180px]">{emailMap[user.id]}</p>
+                          )}
+                          {!emailMap[user.id] && user.phone && (
+                            <p className="text-xs text-slate-400">{user.phone}</p>
+                          )}
                         </div>
                       </div>
                     </TableCell>
