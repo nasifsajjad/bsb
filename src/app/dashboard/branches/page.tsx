@@ -13,14 +13,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { formatBHD, getInitials } from '@/lib/utils'
 import type { Branch, Profile, Report } from '@/lib/types'
-import { Building2, Users, HandCoins, BookOpen, Phone, Edit2, Search } from 'lucide-react'
+import { Building2, Users, HandCoins, BookOpen, Phone, Edit2, Search, ArrowRight, CalendarDays, Plus, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import Link from 'next/link'
+import { formatDate } from '@/lib/utils'
+import { DialogDescription } from '@/components/ui/dialog'
 
 interface BranchWithStats extends Branch {
   totalAttendance: number
   totalSessions: number
   totalCharity: number
   reportCount: number
+  lastReportDate: string | null
 }
 
 export default function BranchesPage() {
@@ -31,7 +35,9 @@ export default function BranchesPage() {
   const [search, setSearch] = useState('')
   const [editBranch, setEditBranch] = useState<Branch | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [form, setForm] = useState({ contact: '', leader_id: '' })
+  const [newBranchName, setNewBranchName] = useState('')
   const [saving, setSaving] = useState(false)
 
   const supabase = createClient()
@@ -46,7 +52,7 @@ export default function BranchesPage() {
 
     const [{ data: b }, { data: r }, { data: p }, { data: leaderList }] = await Promise.all([
       supabase.from('branches').select('*, leader:profiles!leader_id(id, full_name, phone, avatar_url)').order('name'),
-      supabase.from('reports').select('branch_id, attendance, sessions, charity_bhd'),
+      supabase.from('reports').select('branch_id, attendance, sessions, charity_bhd, created_at').order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').eq('id', user.id).single(),
       supabase.from('profiles').select('*').in('role', ['area_leader']).order('full_name'),
     ])
@@ -60,6 +66,7 @@ export default function BranchesPage() {
         totalSessions:   branchReports.reduce((a, rep) => a + (rep.sessions ?? 0), 0),
         totalCharity:    branchReports.reduce((a, rep) => a + Number(rep.charity_bhd ?? 0), 0),
         reportCount:     branchReports.length,
+        lastReportDate:  branchReports[0]?.created_at ?? null,
       }
     })
 
@@ -78,6 +85,26 @@ export default function BranchesPage() {
       leader_id: (branch as any).leader_id ?? '',
     })
     setDialogOpen(true)
+  }
+
+  async function handleAddBranch() {
+    if (!newBranchName.trim()) { toast.error('Branch name is required'); return }
+    setSaving(true)
+
+    const { error } = await supabase
+      .from('branches')
+      .insert({ name: newBranchName.trim() })
+
+    if (error) {
+      toast.error(error.message.includes('unique') ? 'A branch with this name already exists' : error.message)
+      setSaving(false)
+      return
+    }
+    toast.success(`${newBranchName.trim()} branch created`)
+    setSaving(false)
+    setAddDialogOpen(false)
+    setNewBranchName('')
+    load()
   }
 
   async function handleSave() {
@@ -112,14 +139,22 @@ export default function BranchesPage() {
           <h2 className="text-xl font-bold text-slate-900">Branch Overview</h2>
           <p className="text-sm text-slate-500 mt-0.5">{branches.length} branches across Bahrain</p>
         </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <Input
-            placeholder="Search branches…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-9 sm:w-56"
-          />
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder="Search branches…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9 sm:w-56"
+            />
+          </div>
+          {profile?.role === 'super_admin' && (
+            <Button size="sm" className="gap-2 shrink-0" onClick={() => setAddDialogOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Add Branch
+            </Button>
+          )}
         </div>
       </div>
 
@@ -185,6 +220,12 @@ export default function BranchesPage() {
                           )}
                         </div>
                         <p className="text-xs text-slate-500 mt-0.5">{branch.reportCount} reports</p>
+                          {branch.lastReportDate && (
+                            <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                              <CalendarDays className="h-2.5 w-2.5" />
+                              Last: {formatDate(branch.lastReportDate)}
+                            </p>
+                          )}
                       </div>
                     </div>
                     {canEdit && (
@@ -229,6 +270,12 @@ export default function BranchesPage() {
                     </div>
                   )}
 
+                  {/* View details link */}
+                  <Link href={`/dashboard/branches/${branch.id}`} className="flex items-center gap-1 text-xs text-brand-600 hover:text-brand-700 font-medium mb-3">
+                    View full history
+                    <ArrowRight className="h-3 w-3" />
+                  </Link>
+
                   {/* Stats */}
                   <div className="grid grid-cols-3 gap-2">
                     {[
@@ -248,6 +295,35 @@ export default function BranchesPage() {
           })}
         </div>
       )}
+
+      {/* Add Branch Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add New Branch</DialogTitle>
+            <DialogDescription>Create a new branch. You can assign a leader after creation.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="branch-name">Branch Name <span className="text-red-500">*</span></Label>
+              <Input
+                id="branch-name"
+                placeholder="e.g. East Riffa"
+                value={newBranchName}
+                onChange={e => setNewBranchName(e.target.value)}
+                disabled={saving}
+                onKeyDown={e => e.key === 'Enter' && handleAddBranch()}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleAddBranch} disabled={saving}>
+              {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : 'Create Branch'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

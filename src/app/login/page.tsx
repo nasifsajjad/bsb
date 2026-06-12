@@ -1,22 +1,31 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
+import { Suspense } from 'react'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  // Show errors surfaced from the auth callback
+  useEffect(() => {
+    const err = searchParams.get('error')
+    if (err) toast.error(decodeURIComponent(err))
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -25,15 +34,102 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
-      toast.error(error.message)
+      if (error.message.toLowerCase().includes('invalid login credentials')) {
+        toast.error('Invalid email or password. If you were invited, please check your email to set your password first.')
+      } else {
+        toast.error(error.message)
+      }
       setLoading(false)
       return
     }
 
-    router.push('/')
+    router.push('/dashboard')
     router.refresh()
   }
 
+  return (
+    <div className="animate-fade-in">
+      <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Welcome back</h1>
+      <p className="text-slate-500 text-sm mt-1.5">Sign in to your account to continue</p>
+
+      <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="email">Email address</Label>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            disabled={loading}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <Link
+              href="/auth/reset"
+              className="text-xs text-brand-600 hover:text-brand-700 font-medium"
+            >
+              Forgot password?
+            </Link>
+          </div>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={loading}
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+              tabIndex={-1}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+
+        <Button
+          type="submit"
+          className="w-full h-10 text-sm font-semibold"
+          disabled={loading}
+          style={{ backgroundColor: 'var(--app-primary)' }}
+        >
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Signing in…
+            </>
+          ) : (
+            'Sign in'
+          )}
+        </Button>
+      </form>
+
+      <div className="mt-6 p-3 rounded-lg bg-slate-100 border border-slate-200 flex gap-2">
+        <AlertCircle className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+        <p className="text-xs text-slate-500 leading-relaxed">
+          New users must click the invite link in their email to set a password before signing in.
+          Contact your administrator if you haven&apos;t received one.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+export default function LoginPage() {
   return (
     <div className="min-h-screen flex">
       {/* Left: branding panel */}
@@ -103,72 +199,9 @@ export default function LoginPage() {
             <p className="font-semibold text-slate-900">United Youth Forum</p>
           </div>
 
-          <div className="animate-fade-in">
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Welcome back</h1>
-            <p className="text-slate-500 text-sm mt-1.5">Sign in to your account to continue</p>
-
-            <form onSubmit={handleSubmit} className="mt-8 space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={loading}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="current-password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    disabled={loading}
-                    className="pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-                    tabIndex={-1}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <Button
-                type="submit"
-                className="w-full h-10 text-sm font-semibold"
-                disabled={loading}
-                style={{ backgroundColor: 'var(--app-primary)' }}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Signing in…
-                  </>
-                ) : (
-                  'Sign in'
-                )}
-              </Button>
-            </form>
-
-            <p className="text-center text-xs text-slate-400 mt-8">
-              Contact your administrator to get access.
-            </p>
-          </div>
+          <Suspense fallback={<div className="animate-pulse space-y-4"><div className="h-8 bg-slate-200 rounded" /><div className="h-10 bg-slate-200 rounded" /></div>}>
+            <LoginForm />
+          </Suspense>
         </div>
       </div>
     </div>

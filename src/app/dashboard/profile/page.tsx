@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [email, setEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [changingPw, setChangingPw] = useState(false)
@@ -24,7 +25,7 @@ export default function ProfilePage() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [form, setForm] = useState({ full_name: '', phone: '' })
-  const [pwForm, setPwForm] = useState({ current: '', new: '', confirm: '' })
+  const [pwForm, setPwForm] = useState({ new: '', confirm: '' })
 
   const supabase = createClient()
 
@@ -35,6 +36,8 @@ export default function ProfilePage() {
   async function load() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
+
+    setEmail(user.email ?? null)
 
     const { data: p } = await supabase
       .from('profiles')
@@ -98,7 +101,7 @@ export default function ProfilePage() {
     const { error } = await supabase.auth.updateUser({ password: pwForm.new })
     if (error) { toast.error(error.message); setChangingPw(false); return }
     toast.success('Password changed successfully')
-    setPwForm({ current: '', new: '', confirm: '' })
+    setPwForm({ new: '', confirm: '' })
     setChangingPw(false)
   }
 
@@ -189,6 +192,13 @@ export default function ProfilePage() {
                   placeholder="+973 XXXX XXXX"
                 />
               </div>
+              {email && (
+                <div className="space-y-2">
+                  <Label>Email Address</Label>
+                  <Input value={email} readOnly disabled className="bg-slate-50 text-slate-500" />
+                  <p className="text-xs text-slate-400">Email cannot be changed here. Contact a super admin if needed.</p>
+                </div>
+              )}
               <div className="flex justify-end pt-2">
                 <Button onClick={handleSave} disabled={saving}>
                   {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</> : <><Save className="h-4 w-4" /> Save Changes</>}
@@ -214,7 +224,8 @@ export default function ProfilePage() {
                   type="password"
                   value={pwForm.new}
                   onChange={e => setPwForm(f => ({ ...f, new: e.target.value }))}
-                  placeholder="••••••••"
+                  placeholder="Minimum 8 characters"
+                  autoComplete="new-password"
                 />
               </div>
               <div className="space-y-2">
@@ -224,7 +235,8 @@ export default function ProfilePage() {
                   type="password"
                   value={pwForm.confirm}
                   onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))}
-                  placeholder="••••••••"
+                  placeholder="Repeat new password"
+                  autoComplete="new-password"
                 />
               </div>
               <div className="flex justify-end pt-2">

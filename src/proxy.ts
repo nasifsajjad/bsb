@@ -32,6 +32,11 @@ export async function proxy(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
+  // Allow all /auth/* paths without authentication (callback, set-password, reset, etc.)
+  if (pathname.startsWith('/auth/')) {
+    return supabaseResponse
+  }
+
   // Redirect unauthenticated users to login
   if (!user && pathname !== '/login') {
     const url = request.nextUrl.clone()

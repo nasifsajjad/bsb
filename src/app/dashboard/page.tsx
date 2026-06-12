@@ -10,14 +10,15 @@ import type { Report, Goal, Event } from '@/lib/types'
 import {
   Users, HandCoins, Target, BookOpen,
   TrendingUp, TrendingDown, Building2, Calendar,
-  ArrowRight,
+  ArrowRight, AlertTriangle, Clock, X,
 } from 'lucide-react'
 import Link from 'next/link'
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
-import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns'
+import { format, subMonths, startOfMonth, endOfMonth, addDays, isAfter, isBefore } from 'date-fns'
+import { daysUntil } from '@/lib/utils'
 
 interface Stats {
   totalAttendance: number
@@ -54,7 +55,9 @@ export default function DashboardPage() {
   const [branchStats, setBranchStats] = useState<BranchStat[]>([])
   const [upcomingEvents, setUpcomingEvents] = useState<Event[]>([])
   const [recentGoals, setRecentGoals] = useState<Goal[]>([])
+  const [urgentGoals, setUrgentGoals] = useState<Goal[]>([])
   const [loading, setLoading] = useState(true)
+  const [dismissedAlerts, setDismissedAlerts] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -77,8 +80,9 @@ export default function DashboardPage() {
         supabase
           .from('goals')
           .select('*, branch:branches(name)')
-          .order('created_at', { ascending: false })
-          .limit(5),
+          .neq('category', 'completed')
+          .order('deadline', { ascending: true, nullsFirst: false })
+          .limit(20),
         supabase
           .from('events')
           .select('*, branch:branches(name)')
@@ -151,7 +155,17 @@ export default function DashboardPage() {
         .slice(0, 6)
       setBranchStats(sorted)
 
-      setRecentGoals(goals ?? [])
+      const allGoals = goals ?? []
+      setRecentGoals(allGoals.slice(0, 5))
+
+      // Find goals due within 7 days or already overdue
+      const urgent = allGoals.filter(g => {
+        if (!g.deadline) return false
+        const days = daysUntil(g.deadline)
+        return days !== null && days <= 7
+      })
+      setUrgentGoals(urgent)
+
       setUpcomingEvents(events ?? [])
       setLoading(false)
     }
@@ -201,6 +215,51 @@ export default function DashboardPage() {
         <h2 className="text-xl font-bold text-slate-900">Overview</h2>
         <p className="text-sm text-slate-500 mt-0.5">Last 6 months of activity across all branches</p>
       </div>
+
+      {/* Deadline alerts */}
+      {!loading && !dismissedAlerts && urgentGoals.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 animate-fade-in">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-800">
+                {urgentGoals.filter(g => daysUntil(g.deadline) !== null && daysUntil(g.deadline)! < 0).length > 0
+                  ? 'Overdue goals require attention'
+                  : `${urgentGoals.length} goal${urgentGoals.length > 1 ? 's' : ''} due within 7 days`
+                }
+              </p>
+              <div className="mt-2 space-y-1.5">
+                {urgentGoals.slice(0, 3).map(g => {
+                  const days = daysUntil(g.deadline)
+                  const isOverdue = days !== null && days < 0
+                  return (
+                    <div key={g.id} className="flex items-center gap-2 text-xs text-amber-700">
+                      <Clock className="h-3 w-3 shrink-0" />
+                      <span className="font-medium truncate">{g.title}</span>
+                      <span className={`shrink-0 ${isOverdue ? 'text-red-600 font-semibold' : ''}`}>
+                        {isOverdue ? `${Math.abs(days!)}d overdue` : days === 0 ? 'Due today' : `${days}d left`}
+                      </span>
+                    </div>
+                  )
+                })}
+                {urgentGoals.length > 3 && (
+                  <p className="text-xs text-amber-600">+{urgentGoals.length - 3} more</p>
+                )}
+              </div>
+              <Link href="/dashboard/goals" className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:text-amber-900 mt-2">
+                View all goals <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+            <button
+              onClick={() => setDismissedAlerts(true)}
+              className="text-amber-400 hover:text-amber-600 shrink-0"
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 stagger-children">
