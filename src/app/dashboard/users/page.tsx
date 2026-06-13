@@ -15,7 +15,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { Profile, Branch } from '@/lib/types'
 import { getInitials, formatDate } from '@/lib/utils'
-import { Search, UserPlus, Edit2, Users, Trash2, MailCheck, Loader2, RefreshCw } from 'lucide-react'
+import { Search, UserPlus, Edit2, Users, Trash2, Loader2, RefreshCw, Copy, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 const ROLE_LABELS: Record<string, string> = {
@@ -61,6 +61,10 @@ export default function UsersPage() {
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Invite link dialog
+  const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false)
 
   const supabase = createClient()
 
@@ -123,12 +127,16 @@ export default function UsersPage() {
       return
     }
 
-    toast.success(`Invite sent to ${inviteForm.email}`, {
-      description: 'They will receive an email to set their password.',
-    })
     setSaving(false)
     setDialogOpen(false)
     load()
+
+    if (data.inviteLink) {
+      setInviteLink(data.inviteLink)
+      setLinkDialogOpen(true)
+    } else {
+      toast.success(`${inviteForm.full_name} added`)
+    }
   }
 
   // ── Edit role/branch ─────────────────────────────────────────
@@ -164,10 +172,19 @@ export default function UsersPage() {
     const res = await fetch(`/api/admin/users/${user.id}`, { method: 'POST' })
     const data = await res.json()
     if (!res.ok) {
-      toast.error(data.error ?? 'Failed to resend invite')
+      toast.error(data.error ?? 'Failed to generate link')
+    } else if (data.inviteLink) {
+      setInviteLink(data.inviteLink)
+      setLinkDialogOpen(true)
     } else {
-      toast.success(`Invite resent to ${user.full_name}`)
+      toast.success(`Link regenerated for ${user.full_name}`)
     }
+  }
+
+  async function copyLink() {
+    if (!inviteLink) return
+    await navigator.clipboard.writeText(inviteLink)
+    toast.success('Link copied to clipboard')
   }
 
   // ── Delete user ──────────────────────────────────────────────
@@ -327,9 +344,9 @@ export default function UsersPage() {
                           size="icon-sm"
                           className="text-slate-400 hover:text-blue-600"
                           onClick={() => handleResendInvite(user)}
-                          title="Resend invite email"
+                          title="Generate new access link"
                         >
-                          <MailCheck className="h-3.5 w-3.5" />
+                          <RefreshCw className="h-3.5 w-3.5" />
                         </Button>
                         {user.id !== currentUser?.id && (
                           <Button
@@ -360,7 +377,7 @@ export default function UsersPage() {
               <DialogHeader>
                 <DialogTitle>Invite New User</DialogTitle>
                 <DialogDescription>
-                  An email will be sent with a link to set their password.
+                  Creates the account and generates a secure invite link for you to share.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">
@@ -420,7 +437,7 @@ export default function UsersPage() {
               <DialogFooter>
                 <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
                 <Button onClick={handleInvite} disabled={saving} className="gap-2">
-                  {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Sending…</> : <><MailCheck className="h-4 w-4" />Send Invite</>}
+                  {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : <><Link2 className="h-4 w-4" />Generate Invite Link</>}
                 </Button>
               </DialogFooter>
             </>
@@ -461,6 +478,42 @@ export default function UsersPage() {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Invite link dialog ────────────────────────────────── */}
+      <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Link2 className="h-5 w-5 text-brand-600" />
+              Share This Invite Link
+            </DialogTitle>
+            <DialogDescription>
+              Copy this link and send it to the user via WhatsApp, Telegram, SMS, or
+              email. They open it to set their password and sign in — no email setup
+              is required on your end.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-600 break-all select-all">
+              {inviteLink}
+            </div>
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              This is a single-use link and expires after a short time. If it stops
+              working, use the <RefreshCw className="inline h-3 w-3 mb-0.5" /> button on
+              the user&rsquo;s row to generate a fresh one.
+            </p>
+          </div>
+          <DialogFooter className="gap-2 flex-col sm:flex-row">
+            <Button variant="outline" onClick={() => setLinkDialogOpen(false)}>
+              Close
+            </Button>
+            <Button onClick={copyLink} className="gap-2">
+              <Copy className="h-4 w-4" />
+              Copy Link
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

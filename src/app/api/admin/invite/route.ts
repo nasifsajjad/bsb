@@ -4,10 +4,23 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 /**
  * POST /api/admin/invite
- * Invites a new user by email using the Supabase admin API.
- * Only super_admin users can call this endpoint.
- * The invite email contains a link to /auth/callback?next=/auth/set-password
- * which lets the invited user set their password on first login.
+ *
+ * Uses admin.generateLink({ type: 'invite' }) rather than inviteUserByEmail.
+ *
+ * Why: inviteUserByEmail redirects through Supabase's verify endpoint which
+ * appends a PKCE ?code= to the callback URL. Fresh users have no code_verifier
+ * cookie, so exchangeCodeForSession() fails with "invalid auth code".
+ *
+ * generateLink returns a hashed_token we can embed directly in the callback URL:
+ *   /auth/callback?token_hash=<hashed_token>&type=invite&next=/auth/set-password
+ *
+ * The callback verifies this with verifyOtp({ token_hash, type }) — no PKCE
+ * verifier required.
+ *
+ * IMPORTANT: generateLink does NOT send any email — it only returns the link.
+ * That is exactly what we want here: no SMTP / email-template setup is needed.
+ * We return the link to the admin, who shares it with the new user via any
+ * channel (WhatsApp, Telegram, internal email, etc.).
  */
 export async function POST(request: NextRequest) {
   // 1. Verify the caller is authenticated and is a super_admin
@@ -50,25 +63,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
   }
 
-  // 3. Use admin client to invite the user
   const admin = createAdminClient()
   const origin = request.headers.get('origin') ?? new URL(request.url).origin
 
-  const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { full_name },
-    redirectTo: `${origin}/auth/callback?next=/auth/set-password`,
+  // 3. Generate the invite link. This creates the auth user (for type 'invite')
+  //    and returns a hashed_token. No email is sent — we hand the link back.
+  const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+    type: 'invite',
+    email,
+    options: {
+      data: { full_name },
+      redirectTo: `${origin}/auth/callback?next=/auth/set-password`,
+    },
   })
 
-  if (inviteError) {
-    // "User already registered" is a common case — surface it clearly
-    return NextResponse.json({ error: inviteError.message }, { status: 400 })
+  if (linkError) {
+    return NextResponse.json({ error: linkError.message }, { status: 400 })
   }
 
-  // 4. Update the profile with the correct role + branch
-  //    (the handle_new_user trigger already created a profile row)
-  if (inviteData?.user) {
+  // 4. Set the correct role + branch on the new profile
+  if (linkData?.user) {
     await admin.from('profiles').upsert({
-      id: inviteData.user.id,
+      id: linkData.user.id,
       full_name,
       role,
       branch_id: branch_id || null,
@@ -76,5 +92,15 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  return NextResponse.json({ success: true, userId: inviteData?.user?.id })
+  // 5. Build a direct link using hashed_token — works without PKCE verifier
+  const hashed_token = linkData?.properties?.hashed_token
+  const inviteLink = hashed_token
+    ? `${origin}/auth/callback?token_hash=${encodeURIComponent(hashed_token)}&type=invite&next=/auth/set-password`
+    : null
+
+  return NextResponse.json({
+    success: true,
+    userId: linkData?.user?.id,
+    inviteLink,
+  })
 }

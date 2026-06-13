@@ -51,7 +51,8 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
 /**
  * POST /api/admin/users/[id]
- * Resend an invitation email to a user who hasn't confirmed yet.
+ * Regenerate a one-time access link for an existing user (e.g. they lost the
+ * original invite or it expired). Returns the link for the admin to share.
  */
 export async function POST(request: NextRequest, { params }: Params) {
   const { id: targetId } = await params
@@ -87,15 +88,24 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   const origin = request.headers.get('origin') ?? new URL(request.url).origin
 
-  // Re-send the invite
-  const { error: inviteError } = await admin.auth.admin.inviteUserByEmail(
-    targetUser.user.email,
-    { redirectTo: `${origin}/auth/callback?next=/auth/set-password` }
-  )
+  // The user already exists, so we use a 'recovery' link rather than 'invite'
+  // ('invite' would error because the auth user is already created). Recovery
+  // generates a one-time hashed_token the user can verify to set a password.
+  // generateLink does NOT send an email — we hand the link back to the admin.
+  const { data: linkData, error: inviteError } = await admin.auth.admin.generateLink({
+    type: 'recovery',
+    email: targetUser.user.email,
+    options: { redirectTo: `${origin}/auth/callback?next=/auth/set-password` },
+  })
 
   if (inviteError) {
     return NextResponse.json({ error: inviteError.message }, { status: 400 })
   }
 
-  return NextResponse.json({ success: true })
+  const hashed_token = linkData?.properties?.hashed_token
+  const inviteLink = hashed_token
+    ? `${origin}/auth/callback?token_hash=${encodeURIComponent(hashed_token)}&type=recovery&next=/auth/set-password`
+    : null
+
+  return NextResponse.json({ success: true, inviteLink })
 }
